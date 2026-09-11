@@ -1,6 +1,24 @@
 This repo is used to build superset dashboards for Hopsworks. You should pick the most appropriate Chart type based on the dataset and the distribution/cardinality of values.
 
-The first task is to mount all the tables in the mysql 'hopsworks' database as external feature groups. You do this by running 'mount_hopsworks_db.py'. AskUserQuestion if they want to mount the hopsworks database tables if they have not already been mounted.
+## Read the user's answers first
+
+The questions this setup needs answered live in `okrs.md` in the user's home directory
+(`$HOPSFS_USER_HOME_DIR`, falling back to `$HOME`). `okrs.sh` in this repo asks them in the Terminal
+and writes that file, and the Setup Analytics wizard runs it before it launches you. Read `okrs.md`
+before doing anything else. Do not ask the questions yourself and do not run `okrs.sh`: it needs an
+interactive terminal, which a coding agent does not have. If the file is missing, tell the user to
+run `okrs.sh` in the Terminal and stop.
+
+`okrs.md` carries a table of targets and three yes/no setup choices. The targets are the OKR values
+for the current year for `features`, `feature views (models)`, `model deployments` and
+`agent deployments`. A value of 0 means the user does not track that target: create no OKR row for
+it.
+
+## Tasks
+
+The first task, when `mount_hopsworks_db` is `yes`, is to mount all the tables in the mysql
+'hopsworks' database as external feature groups by running 'mount_hopsworks_db.py'. Skip it if
+they are already mounted.
 
 That same run also registers the 'asset_lifecycle' tag schema if it is not already there: status (deprecated | dev | qa | uat | prod) and owner. It is created with history archiving ON, which is what lets create_lifecycle_dashboard.py chart how long assets sit in each stage. Archiving cannot be added retroactively: switching it on later backfills a baseline rather than recovering the transitions that happened while it was off, so creation is the only moment that loses nothing.
 
@@ -8,18 +26,7 @@ An existing schema is left exactly as it is, archive flag included, because re-r
 
 Registering a tag schema is admin-only, which is fine here: this wizard is admin-only too.
 
-The second task is to create a new feature group called okrs that will store the user's OKRs that will be shown in an 'executive dashboard'. If the okrs feature group has not been created and populated, then do the following:
-
-AskUserQuestion: 
-The following are some questions about your OKRs (KPIs) for your organization for the curent year for AI assets in Hopsworks.
- - What is your target for the total number of production features (e.g., 1000)?
-AskUserQuestion: 
- - What is your target for the total number of production models (e.g., 10)?
-AskUserQuestion: 
-
-If the user answers '0' or 'none/no', then do not include that value as an OKR row.
-
-Use the answers to create the okrs feature group with 'target' and 'value' columns. Create a DataFrame with the following data: "features/feature views (models)/model deployments/agent deployments" as the 'target' entries and the 'value' entries being the numerical answer provided by the user.
+The second task is to create a new feature group called okrs that will store the user's OKRs that will be shown in an 'executive dashboard'. If the okrs feature group has not been created and populated, build it from the targets table in `okrs.md`: a DataFrame with 'target' and 'value' columns, one row per target whose value is not 0, with the 'target' entries being exactly the names in the table ("features", "feature views (models)", "model deployments", "agent deployments") and the 'value' entries the numbers the user gave.
 
 We will then create a schematized tag called 'asset' if it doesn't exist. 
 Here is the json for the 'status' schematized tag:
@@ -54,16 +61,12 @@ Here is the json for the 'status' schematized tag:
 Build the executive dashboard by running 'create_executive_dashboard.py'. This reads the targets from the okrs feature group and pairs each one against its live actual, computed from the real hopsworks metadata tables via the hopsworks_analytics JDBC connection in Superset (no Trino). Re-run it after the OKR targets change to refresh them. Note that when you mount the MySQL tables as feature groups, it can rename columns. You will create the dashboards against the MySQL tables, so use its colun names.
 
 
-Then, you want to
-AskUserQuestion:
-Can we schedule a daily job to update the schematized tags in the system?
-If the user answers yes, create a Python job to run 'create_tag_dataset.py' once/day by default at 04.00. Use 1 CPU and 4 GB of memory in the job.
+Then, when `schedule_daily_tag_job` is `yes`, create a Python job to run 'create_tag_dataset.py' once/day by default at 04.00. Use 1 CPU and 4 GB of memory in the job.
 
 Name that job exactly `update-tag-dataset`. This is a contract, not a preference: the Hopsworks UI's "Refresh Dashboard Now" action looks the job up by that literal name (ANALYTICS_TAG_JOB in hopsworks-front's `src/modules/wizard/Wizard.tsx`). Any other name and the action 404s and tells the user to run Setup Analytics first, which they will already have done.
 
 
-AskUserQuestion:
-Do you want to create the dashboards now (executive, developer, others)?
+When `create_dashboards_now` is `yes`, create the dashboards (executive, developer, others).
 
 If the user answers yes, then run the python programs to create the dashboards: create_tag_dataset.py, create_executive_dashboard.py, create-analyst-dashboard.py, create_jobs_dashboard.py, create_tag_history_dashboard.py, create_lifecycle_dashboard.py, create_promotion_dashboard.py.
 
